@@ -9,7 +9,6 @@ import base64
 
 st.set_page_config(page_title="ChessMind Mirror", layout="wide")
 
-# Database setup
 conn = sqlite3.connect("chessmind.db", check_same_thread=False)
 c = conn.cursor()
 c.execute('''CREATE TABLE IF NOT EXISTS users
@@ -18,7 +17,6 @@ c.execute('''CREATE TABLE IF NOT EXISTS games
              (username TEXT, moves TEXT, result TEXT, timestamp TEXT)''')
 conn.commit()
 
-# Session state for game
 if "board" not in st.session_state:
     st.session_state.board = chess.Board()
 if "move_history" not in st.session_state:
@@ -27,11 +25,15 @@ if "current_user" not in st.session_state:
     st.session_state.current_user = None
 if "game_active" not in st.session_state:
     st.session_state.game_active = False
+if "game_result" not in st.session_state:
+    st.session_state.game_result = None
 
-# Profile management
 st.sidebar.header("Player Profile")
 
 def create_profile(username, age, language):
+    if not username:
+        st.error("Username cannot be empty.")
+        return
     try:
         c.execute("INSERT INTO users VALUES (?, ?, ?)", (username, age, language))
         conn.commit()
@@ -51,6 +53,8 @@ def login(username):
 def logout():
     st.session_state.current_user = None
     st.session_state.game_active = False
+    st.session_state.board = chess.Board()
+    st.session_state.move_history = []
     st.success("Logged out successfully.")
 
 def delete_profile(username):
@@ -62,6 +66,9 @@ def delete_profile(username):
     st.success("Profile and game history deleted.")
 
 def update_profile(old_username, new_username, age, language):
+    if not new_username:
+        st.error("New username cannot be empty.")
+        return
     try:
         c.execute("UPDATE users SET username=?, age=?, language=? WHERE username=?", 
                   (new_username, age, language, old_username))
@@ -94,7 +101,6 @@ else:
     if st.sidebar.button("Delete Profile"):
         delete_profile(st.session_state.current_user)
 
-# Game management
 if st.session_state.current_user:
     st.header("ChessMind Mirror")
 
@@ -102,6 +108,7 @@ if st.session_state.current_user:
         st.session_state.board = chess.Board()
         st.session_state.move_history = []
         st.session_state.game_active = True
+        st.session_state.game_result = None
 
     if st.button("Start New Game"):
         start_game()
@@ -114,6 +121,22 @@ if st.session_state.current_user:
                 if move in st.session_state.board.legal_moves:
                     st.session_state.board.push(move)
                     st.session_state.move_history.append(move_input)
+                    if st.session_state.board.is_checkmate():
+                        st.session_state.game_result = "Checkmate"
+                        st.session_state.game_active = False
+                        st.success("Checkmate! Game over.")
+                    elif st.session_state.board.is_stalemate():
+                        st.session_state.game_result = "Stalemate"
+                        st.session_state.game_active = False
+                        st.info("Stalemate. Game drawn.")
+                    elif st.session_state.board.is_insufficient_material():
+                        st.session_state.game_result = "Draw (Insufficient Material)"
+                        st.session_state.game_active = False
+                        st.info("Draw by insufficient material.")
+                    elif st.session_state.board.is_fivefold_repetition():
+                        st.session_state.game_result = "Draw (Repetition)"
+                        st.session_state.game_active = False
+                        st.info("Draw by repetition.")
                 else:
                     st.error("Illegal move.")
             except:
@@ -124,31 +147,37 @@ if st.session_state.current_user:
             st.session_state.move_history.pop()
 
         if st.button("Resign"):
-            c.execute("INSERT INTO games VALUES (?, ?, ?, ?)",
-                      (st.session_state.current_user, ",".join(st.session_state.move_history), "Resigned",
-                       datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
-            conn.commit()
+            st.session_state.game_result = "Resigned"
             st.session_state.game_active = False
+            c.execute("INSERT INTO games VALUES (?, ?, ?, ?)",
+                      (st.session_state.current_user, ",".join(st.session_state.move_history), 
+                       st.session_state.game_result, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+            conn.commit()
             st.success("Game resigned and saved.")
 
         st.write("Current Board")
-        st.write(st.session_state.board)
+        st.image(chess.svg.board(st.session_state.board).encode("utf-8"), use_container_width=True)
+
+        if not st.session_state.game_active and st.session_state.game_result:
+            c.execute("INSERT INTO games VALUES (?, ?, ?, ?)",
+                      (st.session_state.current_user, ",".join(st.session_state.move_history), 
+                       st.session_state.game_result, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+            conn.commit()
 
         if st.button("Finish Game and Save"):
-            result = "Win/Loss/Draw"  # Placeholder
+            result = st.session_state.game_result or "Unfinished"
             c.execute("INSERT INTO games VALUES (?, ?, ?, ?)",
-                      (st.session_state.current_user, ",".join(st.session_state.move_history), result,
-                       datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+                      (st.session_state.current_user, ",".join(st.session_state.move_history), 
+                       result, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
             conn.commit()
             st.session_state.game_active = False
             st.success("Game saved.")
 
-    # Completed games
     st.subheader("Completed Games")
     c.execute("SELECT * FROM games WHERE username=?", (st.session_state.current_user,))
     games = c.fetchall()
     if games:
         df = pd.DataFrame(games, columns=["Username", "Moves", "Result", "Timestamp"])
-        st.table(df)
+        st.dataframe(df, use_container_width=True)
     else:
         st.info("No games found.")
