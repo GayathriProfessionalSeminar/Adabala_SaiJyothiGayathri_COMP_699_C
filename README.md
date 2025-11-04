@@ -8,7 +8,7 @@ The project combines cognitive psychology principles with computational logic to
 ---
 
 ## Objectives
-- To provide a **self-reflective platform** that connects chess strategies with thinking and emotional patterns.  
+- To provide a **self-reflective** platform that connects chess strategies with thinking and emotional patterns.  
 - To encourage **mindful gameplay** that promotes better decision-making and emotional balance.  
 - To analyze move patterns, time taken per move, and risk tendencies using a data-driven approach.  
 - To provide **psychologically informed feedback** that supports self-improvement and stress management.  
